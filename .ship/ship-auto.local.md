@@ -3,7 +3,7 @@ active: true
 task_id: build-cc-knowledge-claude-code-skill
 branch: ship/build-cc-knowledge-claude-code-skill
 base_branch: main
-phase: dev
+phase: handoff
 review_fix_round: 0
 qa_fix_round: 0
 started_at: "2026-04-16T14:53:19Z"
