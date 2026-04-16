@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# setup — Interactive installer for cc-knowledge
+# Run once to configure your personal Claude Code knowledge vault.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+echo ""
+echo "=== cc-knowledge setup ==="
+echo ""
+
+# ── 1. Check prerequisites ───────────────────────────────────────────────────
+
+if ! command -v python3 &>/dev/null; then
+    echo "Error: python3 not found. Please install Python 3.9+ first."
+    exit 1
+fi
+
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+if [[ "$PYTHON_MAJOR" -lt 3 ]] || { [[ "$PYTHON_MAJOR" -eq 3 ]] && [[ "$PYTHON_MINOR" -lt 9 ]]; }; then
+    echo "Error: Python 3.9+ required (found $PYTHON_VERSION)."
+    exit 1
+fi
+
+if ! python3 -c "import anthropic" 2>/dev/null; then
+    echo "Error: 'anthropic' Python package not found."
+    echo "Install it with: pip install anthropic"
+    exit 1
+fi
+
+echo "Prerequisites OK (Python $PYTHON_VERSION, anthropic package found)"
+echo ""
+
+# ── 2. Ask 3 questions ───────────────────────────────────────────────────────
+
+read -r -p "What language do you want for your notes? (e.g. English, 中文, Español, 日本語): " LANGUAGE
+LANGUAGE="${LANGUAGE:-English}"
+
+read -r -p "Where should your knowledge base live? [$HOME/Documents/CC-Knowledge]: " VAULT_INPUT
+VAULT_INPUT="${VAULT_INPUT:-$HOME/Documents/CC-Knowledge}"
+# Expand tilde
+VAULT_PATH="${VAULT_INPUT/#\~/$HOME}"
+# Resolve to absolute path
+VAULT_PATH="$(cd "$(dirname "$VAULT_PATH")" 2>/dev/null && pwd)/$(basename "$VAULT_PATH")" || VAULT_PATH="$VAULT_PATH"
+
+read -r -p "Your Anthropic API key (sk-ant-...): " API_KEY
+if [[ -z "$API_KEY" ]]; then
+    echo "Error: Anthropic API key is required."
+    exit 1
+fi
+
+echo ""
+echo "Configuration:"
+echo "  Language:  $LANGUAGE"
+echo "  Vault:     $VAULT_PATH"
+echo "  API key:   ${API_KEY:0:12}..."
+echo ""
+
+# ── 3. Create vault from scaffold ────────────────────────────────────────────
+
+echo "Creating vault at $VAULT_PATH ..."
+mkdir -p "$VAULT_PATH"
+cp -rn "$SCRIPT_DIR/scaffold/." "$VAULT_PATH/" 2>/dev/null || true
+# cp -rn won't overwrite existing files — safe to re-run
+echo "  Scaffold copied."
+
+# ── 4. Translate if not English ───────────────────────────────────────────────
+
+if [[ "$LANGUAGE" != "English" ]] && [[ "$LANGUAGE" != "english" ]]; then
+    echo ""
+    echo "Translating scaffold to $LANGUAGE (this takes ~30 seconds)..."
+    python3 "$SCRIPT_DIR/bin/translate_scaffold.py" \
+        --language "$LANGUAGE" \
+        --vault-dir "$VAULT_PATH" \
+        --api-key "$API_KEY"
+else
+    # Write language.txt even for English
+    echo "English" > "$VAULT_PATH/_system/language.txt"
+    echo "  Language set to English."
+fi
+
+# ── 5. Write config file ─────────────────────────────────────────────────────
+
+echo ""
+echo "Writing config to ~/.cc-knowledge/config.json ..."
+mkdir -p "$HOME/.cc-knowledge"
+cat > "$HOME/.cc-knowledge/config.json" <<CONFIG
+{
+  "vault_path": "$VAULT_PATH",
+  "language": "$LANGUAGE",
+  "api_key": "$API_KEY"
+}
+CONFIG
+echo "  Config written."
+
+# ── 6. Configure MCP in ~/.claude.json ───────────────────────────────────────
+
+echo ""
+echo "Configuring MCP filesystem server in ~/.claude.json ..."
+python3 "$SCRIPT_DIR/bin/configure_mcp.py" --vault "$VAULT_PATH"
+
+# ── 7. Copy daily_ingest.py into ~/.cc-knowledge/ ────────────────────────────
+
+echo ""
+echo "Installing daily_ingest.py to ~/.cc-knowledge/ ..."
+cp "$SCRIPT_DIR/bin/daily_ingest.py" "$HOME/.cc-knowledge/daily_ingest.py"
+chmod +x "$HOME/.cc-knowledge/daily_ingest.py"
+echo "  Installed."
+
+# ── 8. Install launchd plist (macOS only) ────────────────────────────────────
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    echo ""
+    echo "Installing launchd agent (daily 9am auto-ingest)..."
+
+    PYTHON_BIN="$(which python3)"
+    SCRIPT_BIN="$HOME/.cc-knowledge/daily_ingest.py"
+    LOG_DIR="$HOME/.cc-knowledge/"
+    PLIST_DEST="$HOME/Library/LaunchAgents/com.user.cc-knowledge.plist"
+
+    mkdir -p "$HOME/Library/LaunchAgents"
+
+    sed \
+        -e "s|__PYTHON__|$PYTHON_BIN|g" \
+        -e "s|__SCRIPT__|$SCRIPT_BIN|g" \
+        -e "s|__LOG_DIR__|$LOG_DIR|g" \
+        "$SCRIPT_DIR/launchd/template.plist" > "$PLIST_DEST"
+
+    if launchctl load "$PLIST_DEST" 2>/dev/null; then
+        echo "  launchd agent loaded — will run daily at 9am."
+    else
+        echo "  Warning: launchctl load failed. You can load manually with:"
+        echo "    launchctl load $PLIST_DEST"
+    fi
+else
+    echo ""
+    echo "Note: launchd setup skipped (macOS only)."
+    echo "To run daily_ingest automatically on Linux, add a cron job:"
+    echo "  0 9 * * * python3 $HOME/.cc-knowledge/daily_ingest.py"
+fi
+
+# ── 9. Success summary ────────────────────────────────────────────────────────
+
+echo ""
+echo "============================================"
+echo "  cc-knowledge installed successfully!"
+echo "============================================"
+echo ""
+echo "  Vault:      $VAULT_PATH"
+echo "  Config:     $HOME/.cc-knowledge/config.json"
+echo "  Auto-ingest: runs daily at 9am"
+echo ""
+echo "Next steps:"
+echo "  1. Restart Claude Code (to pick up the new MCP server)"
+echo "  2. After any valuable conversation, type /o to save it"
+echo "  3. Check logs: tail -f ~/.cc-knowledge/ingest.log"
+echo ""
+echo "Manual ingest:"
+echo "  python3 ~/.cc-knowledge/daily_ingest.py --dry-run"
+echo "  python3 ~/.cc-knowledge/daily_ingest.py --all"
+echo ""
