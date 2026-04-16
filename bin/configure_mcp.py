@@ -21,7 +21,7 @@ def load_claude_json() -> dict:
         try:
             return json.loads(CLAUDE_JSON.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            print(f"ERROR: ~/.claude.json contains invalid JSON: {e}")
+            print(f"Error: ~/.claude.json contains invalid JSON: {e}")
             print("Please fix the file manually, then re-run setup.")
             sys.exit(1)
     return {}

@@ -460,7 +460,6 @@ def main():
     if not api_key:
         print("Error: no Anthropic API key found in config or ANTHROPIC_API_KEY env var.")
         sys.exit(1)
-    os.environ["ANTHROPIC_API_KEY"] = api_key
     client = anthropic.Anthropic(api_key=api_key)
 
     log("=" * 60)
