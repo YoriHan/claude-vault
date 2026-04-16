@@ -1,4 +1,4 @@
-# claude-vault
+# claude-vault · Claude 对话知识库
 
 **让每一次和 Claude Code 的对话，都变成你永久的知识资产。**
 
