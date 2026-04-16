@@ -127,6 +127,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
         -e "s|__PYTHON__|$PYTHON_BIN|g" \
         -e "s|__SCRIPT__|$SCRIPT_BIN|g" \
         -e "s|__LOG_DIR__|$LOG_DIR|g" \
+        -e "s|__API_KEY__|$API_KEY|g" \
         "$SCRIPT_DIR/launchd/template.plist" > "$PLIST_DEST"
 
     if launchctl load "$PLIST_DEST" 2>/dev/null; then

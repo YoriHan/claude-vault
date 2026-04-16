@@ -56,20 +56,11 @@ def load_config() -> dict:
     return cfg
 
 
-# ── Globals (set after config load) ─────────────────────────────────────────
+# ── Globals (initialized inside main() after argparse) ───────────────────────
 
-config       = load_config()
-NOTEBOOK_DIR = Path(config["vault_path"])
-LANGUAGE     = config.get("language", "English")
-
-# API key: config file takes priority, fall back to env var
-api_key = config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
-if not api_key:
-    print("Error: no Anthropic API key found in config or ANTHROPIC_API_KEY env var.")
-    sys.exit(1)
-os.environ["ANTHROPIC_API_KEY"] = api_key
-
-client = anthropic.Anthropic(api_key=api_key)
+NOTEBOOK_DIR: Path = Path(".")   # placeholder; set in main()
+LANGUAGE: str = "English"        # placeholder; set in main()
+client: anthropic.Anthropic      # set in main()
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -190,10 +181,10 @@ def call_decision_api(conv_text: str) -> dict | None:
 
 # ── Phase 2a: Recap generation API ──────────────────────────────────────────
 
-RECAP_SYSTEM = f"""You are the content generation assistant for CC-Knowledge.
+RECAP_SYSTEM_TEMPLATE = """You are the content generation assistant for CC-Knowledge.
 Generate a session recap Markdown file based on the conversation provided.
 
-IMPORTANT: Write all content in {LANGUAGE}.
+IMPORTANT: Write all content in {language}.
 
 Format:
 # YYYY-MM-DD Title
@@ -237,7 +228,7 @@ def call_recap_api(conv_text: str, date: str, title: str) -> str:
         resp = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=3000,
-            system=RECAP_SYSTEM,
+            system=RECAP_SYSTEM_TEMPLATE.format(language=LANGUAGE),
             messages=[{"role": "user", "content": f"Generate a session recap for this conversation (date: {date}, topic: {title}):\n\n{conv_text}"}]
         )
         return resp.content[0].text.strip()
@@ -248,9 +239,9 @@ def call_recap_api(conv_text: str, date: str, title: str) -> str:
 
 # ── Phase 2b: Q&A extraction API ─────────────────────────────────────────────
 
-QA_SYSTEM = f"""You are a Q&A handbook organizer. Extract user questions about operations, tools, or concepts from the conversation and format them as Q&A entries.
+QA_SYSTEM_TEMPLATE = """You are a Q&A handbook organizer. Extract user questions about operations, tools, or concepts from the conversation and format them as Q&A entries.
 
-IMPORTANT: Write all content in {LANGUAGE}.
+IMPORTANT: Write all content in {language}.
 
 Output only the following Markdown format, no preamble:
 
@@ -266,7 +257,7 @@ def call_qa_api(conv_text: str, category: str) -> str:
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1000,
-            system=QA_SYSTEM,
+            system=QA_SYSTEM_TEMPLATE.format(language=LANGUAGE),
             messages=[{"role": "user", "content": f"Category: {category}\n\nConversation:\n\n{conv_text[:6000]}"}]
         )
         return resp.content[0].text.strip()
@@ -457,6 +448,20 @@ def main():
     parser.add_argument("--all", action="store_true",
                         help="Reprocess all files regardless of state")
     args = parser.parse_args()
+
+    # Load config after argparse so --help works without a config file
+    global NOTEBOOK_DIR, LANGUAGE, client
+    config = load_config()
+    NOTEBOOK_DIR = Path(config["vault_path"])
+    LANGUAGE = config.get("language", "English")
+
+    # API key: config file takes priority, fall back to env var
+    api_key = config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print("Error: no Anthropic API key found in config or ANTHROPIC_API_KEY env var.")
+        sys.exit(1)
+    os.environ["ANTHROPIC_API_KEY"] = api_key
+    client = anthropic.Anthropic(api_key=api_key)
 
     log("=" * 60)
     log("daily_ingest started" + (" [dry-run]" if args.dry_run else ""))

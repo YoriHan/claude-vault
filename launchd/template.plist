@@ -17,14 +17,13 @@
       __PYTHON__   — absolute path to python3 (e.g. /usr/bin/python3)
       __SCRIPT__   — absolute path to installed daily_ingest.py
       __LOG_DIR__  — directory for stdout/stderr logs (e.g. /Users/you/.cc-knowledge/)
+      __API_KEY__  — Anthropic API key injected at install time
     -->
 
     <key>EnvironmentVariables</key>
     <dict>
-        <!-- API key is read from ~/.cc-knowledge/config.json at runtime;
-             this env var is set as a fallback for compatibility. -->
         <key>ANTHROPIC_API_KEY</key>
-        <string>read-from-config</string>
+        <string>__API_KEY__</string>
     </dict>
 
     <!-- Run once per day at 9:00 AM -->

@@ -21,12 +21,9 @@ def load_claude_json() -> dict:
         try:
             return json.loads(CLAUDE_JSON.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            print(f"Warning: could not parse {CLAUDE_JSON}: {e}")
-            print("Creating fresh config (existing content preserved as backup).")
-            backup = CLAUDE_JSON.with_suffix(".json.bak")
-            CLAUDE_JSON.rename(backup)
-            print(f"Backup written to: {backup}")
-            return {}
+            print(f"ERROR: ~/.claude.json contains invalid JSON: {e}")
+            print("Please fix the file manually, then re-run setup.")
+            sys.exit(1)
     return {}
 
 
